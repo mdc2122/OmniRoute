@@ -98,6 +98,7 @@ import { isConnectionUnavailableToAuxiliaryActivity } from "@/lib/exclusiveLease
 import { fetchCursorAgentModels } from "@/lib/providerModels/cursorAgent";
 import { fetchCursorAvailableModels } from "@/lib/providerModels/cursorAvailableModels";
 import { ensureCursorAutoCatalogEntry } from "@/lib/providerModels/cursorAutoCatalog";
+import { resolveCursorBearerToken } from "@omniroute/open-sse/services/cursorApiKeyAuth.ts";
 import { resolveCopilotDiscoveryToken } from "@/lib/providerModels/copilotDiscoveryToken";
 import {
   type JsonRecord,
@@ -1385,7 +1386,7 @@ export async function GET(
       }
     }
 
-    if (provider === "cursor") {
+    if (provider === "cursor" || provider === "cursor-api") {
       const cachedResponse = maybeReturnCachedDiscovery();
       if (cachedResponse) return cachedResponse;
 
@@ -1393,13 +1394,22 @@ export async function GET(
       if (autoFetchDisabledResponse) return autoFetchDisabledResponse;
 
       const warnings: string[] = [];
-      const token = (accessToken || apiKey || "").trim();
       const machineId =
         typeof connection?.providerSpecificData === "object" &&
         connection.providerSpecificData &&
         typeof (connection.providerSpecificData as { machineId?: unknown }).machineId === "string"
           ? (connection.providerSpecificData as { machineId: string }).machineId
           : null;
+
+      let token = "";
+      try {
+        // cursor-api stores a crsr_ user key that api2.cursor.sh only accepts
+        // after exchange; IDE/OAuth connections already hold a session token.
+        token = await resolveCursorBearerToken({ apiKey, accessToken });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        warnings.push(`no usable Cursor session token (${message})`);
+      }
 
       if (token) {
         try {
@@ -1413,27 +1423,31 @@ export async function GET(
           console.log("[models] Cursor AvailableModels failed:", message);
           warnings.push(`AvailableModels unavailable (${message})`);
         }
-      } else {
-        warnings.push("no Cursor access token on connection");
       }
 
-      try {
-        const models = ensureCursorAutoCatalogEntry(await fetchCursorAgentModels());
-        return buildApiDiscoveryResponse(models);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.log("[models] cursor-agent fetch failed:", message);
-        const detail = [...warnings, `cursor-agent unavailable (${message})`].join("; ");
-        const fallback = buildDiscoveryFallbackResponse({
-          cacheWarning: `${detail} — using cached catalog`,
-          localWarning: `${detail} — using local catalog`,
-        });
-        if (fallback) return fallback;
-        return NextResponse.json(
-          { error: `Failed to fetch Cursor models: ${detail}` },
-          { status: 502 }
-        );
+      // The host's cursor-agent login is a different account than an API-key
+      // connection, so only IDE/OAuth connections may borrow its catalog.
+      if (provider === "cursor") {
+        try {
+          const models = ensureCursorAutoCatalogEntry(await fetchCursorAgentModels());
+          return buildApiDiscoveryResponse(models);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.log("[models] cursor-agent fetch failed:", message);
+          warnings.push(`cursor-agent unavailable (${message})`);
+        }
       }
+
+      const detail = warnings.join("; ");
+      const fallback = buildDiscoveryFallbackResponse({
+        cacheWarning: `${detail} — using cached catalog`,
+        localWarning: `${detail} — using local catalog`,
+      });
+      if (fallback) return fallback;
+      return NextResponse.json(
+        { error: `Failed to fetch Cursor models: ${detail}` },
+        { status: 502 }
+      );
     }
 
     if (provider === "inner-ai") {
