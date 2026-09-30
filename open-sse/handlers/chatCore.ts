@@ -511,6 +511,7 @@ async function handleChatCoreInner({
   skipResourcePressureGuard = false,
   reasoningTransportFallback = "drop",
   managedLease = null,
+  beforeUpstreamAttempt = undefined,
   // #12150 P1b: additive, optional video-bridge log/Memory shadow — shape is
   // VideoBridgeLogParam (defined near the top of this file). Built once in chat.ts from
   // preCallGuardrails.results (video-bridge guardrail meta) and threaded here
@@ -626,10 +627,13 @@ async function handleChatCoreInner({
     });
   };
   const getManagedLeaseFenceErrorCode = (code: string | undefined): string | undefined => {
+    if (code === "MUSE_OWNERSHIP_REJECTED") return code;
     if (managedLease === null) return undefined;
     return code?.startsWith("LEASE_") ? code : undefined;
   };
   const managedLeaseFenceErrorResult = (code: string) => {
+    if (code === "MUSE_OWNERSHIP_REJECTED")
+      return createErrorResult(409, "Muse session ownership or caller generation changed; continuation rejected.", null, code);
     return {
       ...createErrorResult(409, "Managed lease request fence rejected the dispatch", null, code),
       errorType: "lease_error",
@@ -3063,8 +3067,8 @@ async function handleChatCoreInner({
   }
   // Get executor for this provider (with optional upstream proxy routing)
   const executor = await resolveExecutorWithProxy(provider);
-  const getExecutionCredentials = () =>
-    withReasoningRuleContext(
+  const getExecutionCredentials = () => {
+    const executionCredentials = withReasoningRuleContext(
       resolveExecutionCredentialsFor({
         credentials,
         nativeCodexPassthrough: nativeResponsesPassthrough,
@@ -3076,6 +3080,9 @@ async function handleChatCoreInner({
       }),
       reasoningRuleDirective
     );
+    beforeUpstreamAttempt?.(executionCredentials);
+    return executionCredentials;
+  };
 
   let onPipelineStreamError: streamFailure.PipelineStreamErrorHandler | null = null;
   let onClientDisconnectFinalize:
