@@ -224,6 +224,10 @@ export type StreamCtx = {
   // End-signal tracking (Phase 8 hardens this further).
   receivedText: boolean;
   kvAfterTextSeen: boolean;
+  // A tool call (Cursor-internal such as composer's get_mcp_tools, or a client
+  // tool still streaming) started after the last text/thinking delta. A KV
+  // checkpoint in that window is not the end of the turn.
+  toolActivitySinceText: boolean;
   endReason: "turn_ended" | "kv_after_text" | "tool_calls" | "server_end" | null;
   // Mid-stream JSON error (rare; emitted once with the error code).
   midStreamError: { message: string; status: number } | null;
@@ -316,6 +320,7 @@ export function newStreamCtx(model: string, emit: (chunk: string) => void): Stre
     tokenDelta: 0,
     receivedText: false,
     kvAfterTextSeen: false,
+    toolActivitySinceText: false,
     endReason: null,
     midStreamError: null,
     emittedToolCallIndex: 0,
@@ -759,6 +764,7 @@ export function processFrame(
       // totalText must equal what the client actually received.
       const safeDelta = ctx.narrationScrubber.feed(d.text);
       ctx.receivedText = true;
+      ctx.toolActivitySinceText = false;
       if (safeDelta) {
         ctx.totalText += safeDelta;
         emitChunk(ctx, { content: safeDelta });
@@ -770,6 +776,7 @@ export function processFrame(
       }
       ctx.thinkingText += d.text;
       ctx.receivedText = true;
+      ctx.toolActivitySinceText = false;
       // Composer (decolua/9router#1310) encodes the visible reply inside the
       // thinking field, after a final `</think>` marker. Emit the post-marker
       // suffix as plain `content` (so OpenAI-compatible clients see the reply)
@@ -835,10 +842,15 @@ export function processFrame(
       if (d.usage) ctx.turnUsage = d.usage;
       if (ctx.endReason !== "tool_calls") ctx.endReason = "turn_ended";
     } else if (d.kind === "unknown") {
+      // Field 7 is partial_tool_call: it streams a tool call before
+      // tool_call_started, and Cursor can save KV blobs in between.
+      if (d.field === 7) ctx.toolActivitySinceText = true;
       if (ctx.lastUnknownUpdateField !== d.field) {
         debugLog(`[cursor-agent] unhandled interaction update field=${d.field}`);
       }
       ctx.lastUnknownUpdateField = d.field;
+    } else if (d.kind === "tool_call_started") {
+      ctx.toolActivitySinceText = true;
     } else if (d.kind === "tool_call_completed" && ctx.toolCalls.length > 0) {
       // Phase 6: model paused awaiting tool result. driveH2 returns but the
       // h2 stream stays open — the session manager keeps it alive for the
@@ -854,11 +866,10 @@ export function processFrame(
       // turn. Phase 8 keeps both signals as defense-in-depth.
       //
       // Safe vs tool calls (composer family only): when the model invokes a
-      // tool, the exec_mcp event always arrives at or before this kv
-      // checkpoint (verified across many live composer-2.5 trials — a tool call
-      // never follows kv_after_text), so endReason is already "tool_calls" by
-      // the time we get here. Ending on kv_after_text therefore never truncates
-      // a pending tool call on composer.
+      // tool straight after text, the exec_mcp event always arrives at or
+      // before this kv checkpoint (verified across many live composer-2.5
+      // trials), so endReason is already "tool_calls" by the time we get here.
+      // The exception is a Cursor-internal tool call in between (below).
       //
       // Non-composer models (cursor/grok-4.5-high, auto, ...) emit the KV
       // checkpoint as a blob-store side-channel frame (envelope field 4,
@@ -869,8 +880,13 @@ export function processFrame(
       // this family only the real terminal signals (turn_ended,
       // tool_call_completed, server_end) decide — kvAfterTextSeen is kept purely
       // as an observational flag, never as the turn terminator.
+      //
+      // Composer also runs Cursor-internal tools mid-turn (get_mcp_tools, served
+      // through exec mcp_state) and saves KV blobs before it sends the exec_mcp
+      // for the client tool. A KV checkpoint after such a tool, with no
+      // text since, is that save — not the end of the turn.
       ctx.kvAfterTextSeen = true;
-      if (isComposerModel(ctx.model)) {
+      if (isComposerModel(ctx.model) && !ctx.toolActivitySinceText) {
         ctx.endReason = "kv_after_text";
       }
     }
