@@ -1,7 +1,4 @@
-import {
-  MUSE_CODE_INFERENCE_USER_AGENT,
-  MUSE_CODE_RESPONSES_URL,
-} from "../../../museCode.ts";
+import { MUSE_CODE_INFERENCE_USER_AGENT, MUSE_CODE_RESPONSES_URL } from "../../../museCode.ts";
 import type { RegistryEntry } from "../../shared.ts";
 import { buildOpenAiCompatibleRegistryEntry } from "../../shared.ts";
 
@@ -46,6 +43,10 @@ export const muse_codeProvider: RegistryEntry = buildOpenAiCompatibleRegistryEnt
   reasoningTransport: "opaque",
   defaultContextLength: 200000,
   models: [
+    // Wonder is Responses-only like Spark. Unlisted ids fall back to the provider's "openai" format, and
+    // upstream v3.8.52's executor then sends a chat-completions body to /responses (HTTP 400).
+    museSparkModel("muse-wonder-full-1.0", "Muse Wonder Full 1.0"),
+    museSparkModel("muse-wonder-1.0", "Muse Wonder 1.0"),
     museSparkModel("muse-spark-1.3", "Muse Spark 1.3"),
     museSparkModel("muse-spark-1.3-contributor", "Muse Spark 1.3 Contributor"),
     museSparkModel("muse-spark-1.2", "Muse Spark 1.2", {
