@@ -57,6 +57,71 @@ test("muse-code tool aliasing handles the Codex builtin collisions", () => {
   assert.equal(aliases.get("client_update_goal"), "update_goal");
 });
 
+test("muse-code normalizes empty no-argument function call arguments", () => {
+  const body = {
+    tools: [{ type: "function", name: "collaboration_list_agents" }],
+    input: [
+      {
+        type: "function_call",
+        call_id: "call_list",
+        name: "collaboration_list_agents",
+        arguments: "",
+      },
+      {
+        type: "function_call",
+        call_id: "call_space",
+        name: "exec_command",
+        arguments: "   ",
+      },
+      {
+        type: "function_call",
+        call_id: "call_missing",
+        name: "create_goal",
+      },
+      {
+        type: "function_call",
+        call_id: "call_object",
+        name: "exec_command",
+        arguments: { cmd: "pwd" },
+      },
+      {
+        type: "function_call",
+        call_id: "call_valid",
+        name: "exec_command",
+        arguments: '{"cmd":"pwd"}',
+      },
+    ],
+  };
+  const original = structuredClone(body);
+  const adapted = aliasMuseCodeBuiltinTools(body);
+  const input = (adapted.body as JsonRecord).input as JsonRecord[];
+
+  assert.equal(input[0].arguments, "{}");
+  assert.equal(input[1].arguments, "{}");
+  assert.equal(input[2].name, "client_create_goal");
+  assert.equal(input[2].arguments, "{}");
+  assert.equal(input[3].arguments, '{"cmd":"pwd"}');
+  assert.equal(input[4].arguments, '{"cmd":"pwd"}');
+  assert.deepEqual(body, original, "caller body must not be mutated");
+});
+
+test("muse-code leaves non-empty JSON function arguments byte-for-byte intact", () => {
+  const argumentsValue = ' { "cmd": "pwd" } ';
+  const body = {
+    input: [
+      {
+        type: "function_call",
+        call_id: "call_1",
+        name: "collaboration_list_agents",
+        arguments: argumentsValue,
+      },
+    ],
+  };
+  const adapted = aliasMuseCodeBuiltinTools(body);
+  assert.equal(adapted.body, body);
+  assert.equal((body.input[0] as JsonRecord).arguments, argumentsValue);
+});
+
 test("muse-code tool aliasing avoids collisions with caller-owned aliases", () => {
   const body = {
     tools: [

@@ -76,6 +76,20 @@ function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
 }
 
+/** Responses requires a JSON-string field even when a no-argument tool is replayed. */
+function normalizeFunctionCallArguments(value: unknown): string {
+  if (typeof value === "string") return value.trim() ? value : "{}";
+  if (value !== undefined && value !== null) {
+    try {
+      const serialized = JSON.stringify(value);
+      if (serialized !== undefined) return serialized;
+    } catch {
+      // Fall through to the no-argument representation.
+    }
+  }
+  return "{}";
+}
+
 /** Alias → original mapping consumed by the existing `_toolNameMap` response seam. */
 export type MuseCodeToolAliases = Map<string, string>;
 
@@ -85,6 +99,8 @@ export type MuseCodeToolAliases = Map<string, string>;
  * Flat function declarations whose names collide with Muse builtins are renamed
  * to `client_<name>` (with a numeric suffix if needed). Matching historical
  * `function_call` items are renamed too, so follow-up turns remain coherent.
+ * Meta also requires every replayed `function_call.arguments` to be valid JSON;
+ * Codex emits an empty string for no-argument tools, so normalize those to `{}`.
  * The input is never mutated; the response alias ledger is attached as the
  * non-enumerable `_toolNameMap` side channel used by OmniRoute's response layer.
  */
@@ -142,10 +158,18 @@ export function aliasMuseCodeBuiltinTools(body: unknown): {
   const input = Array.isArray(body.input) ? body.input : null;
   const adaptedInput = input?.map((item) => {
     if (!isRecord(item) || item.type !== "function_call") return item;
+
     const name = stringValue(item.name);
-    if (!name || !MUSE_CODE_BUILTIN_TOOL_NAMES.has(name)) return item;
+    const adaptedName = name && MUSE_CODE_BUILTIN_TOOL_NAMES.has(name) ? aliasFor(name) : name;
+    const normalizedArguments = normalizeFunctionCallArguments(item.arguments);
+    const argumentsChanged = normalizedArguments !== item.arguments;
+    if (adaptedName === name && !argumentsChanged) return item;
+
     inputChanged = true;
-    return { ...item, name: aliasFor(name) };
+    const next = { ...item };
+    if (adaptedName !== name) next.name = adaptedName;
+    if (argumentsChanged) next.arguments = normalizedArguments;
+    return next;
   });
 
   // Meta accepts only the string "auto" for Muse subscription requests.

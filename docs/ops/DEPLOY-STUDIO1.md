@@ -20,6 +20,8 @@ runbook, not here.
 | `deploy-build: keep Muse empty-response flakes from locking out the owner` | Empty-response flakes must not cool down the account                                                                                                             |
 | `fix(cursor): keep composer turns open across KV saves ...` (#15261)       | Composer tool calls; merged upstream after the v3.8.52 cut. Drop this on a rebase onto a release that contains it                                                |
 | `deploy-build: register Muse Wonder ids with the Responses format`         | Stock upstream v3.8.52 sends unlisted `muse-wonder-*` ids a chat-completions body on `/responses` (HTTP 400). Keep until upstream registers Wonder               |
+| `fix(muse): alias Codex builtin tool collisions for subscriptions`         | Codex tool names collide with Muse builtins (`403 client_attestation_denied`); alias on request and restore names on response                                    |
+| `fix(muse): normalize empty no-argument tool arguments`                    | Codex histories replay no-arg calls as `arguments: ""`; Meta rejects them unless normalized to valid JSON (`{}`)                                                 |
 
 ## Rules
 
@@ -35,5 +37,5 @@ runbook, not here.
   node --import tsx/esm --import ./open-sse/utils/setupPolyfill.ts --import ./tests/_setup/isolateDataDir.ts \
     --test --test-force-exit tests/unit/muse-code-models.test.ts tests/unit/muse-code-provider.test.ts \
     tests/unit/muse-code-responses-url.test.ts tests/unit/muse-session-ownership.test.ts \
-    tests/unit/muse-empty-response-retry.test.ts tests/unit/cursor-composer-kv-toolcall-race.test.ts
+    tests/unit/muse-empty-response-retry.test.ts tests/unit/muse-codex-tool-attestation.test.ts     tests/unit/cursor-composer-kv-toolcall-race.test.ts
   ```
