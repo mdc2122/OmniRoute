@@ -1586,6 +1586,13 @@ export function createSSEStream(options: StreamOptions = {}) {
                     continue;
                   }
 
+                  // Restore provider-side aliases before this event is copied into
+                  // the pending-output buffer. Otherwise response.completed backfill
+                  // can contain both alias and caller-named copies of one tool call.
+                  const restoredResponseToolName = restoreOpenAIToolNames(
+                    parsed as JsonRecord,
+                    toolNameMap
+                  );
                   const responsesIdsNormalized = normalizeResponsesSseIds(parsed as JsonRecord);
                   const parsedResponse =
                     parsed.response &&
@@ -1843,7 +1850,8 @@ export function createSSEStream(options: StreamOptions = {}) {
                     textualToolCallBackfilled ||
                     responsesIdsNormalized ||
                     usageNormalized ||
-                    responsesCommentaryStrippedFromCompleted
+                    responsesCommentaryStrippedFromCompleted ||
+                    restoredResponseToolName
                   ) {
                     output = `data: ${JSON.stringify(parsed)}\n\n`;
                     injectedUsage = true;

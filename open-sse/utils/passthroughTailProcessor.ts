@@ -301,7 +301,13 @@ export function processBufferedPassthroughLine(
     const isClaude = context.isClaudeEventPayload(parsed);
 
     if (isResponses) {
+      // Restore before buffering function-call output items so completed-response
+      // backfill never mixes alias and caller names.
+      const restoredToolName = context.restoreOpenAIToolNames(parsed);
       output = handleResponsesTailPayload(parsed, output, context);
+      if (restoredToolName) {
+        output = `data: ${JSON.stringify(parsed)}\n\n`;
+      }
     } else if (!isClaude) {
       const restoredToolName = context.restoreOpenAIToolNames(parsed);
       handleOpenAiTailPayload(parsed, context);

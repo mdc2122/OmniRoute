@@ -50,6 +50,7 @@ import {
 } from "../config/providers/registry/poe/index.ts";
 import { buildMaritalkChatUrl } from "../config/maritalk.ts";
 import { LOCAL_PROVIDERS } from "@/shared/constants/providers";
+import { aliasMuseCodeBuiltinTools } from "./museCodeToolNames.ts";
 import { isForbiddenCustomHeaderName } from "@/shared/constants/upstreamHeaders";
 import { getClaudeCodeCompatibleRequestDefaults } from "@/lib/providers/requestDefaults";
 import { applyClineAuthHeaders } from "@/shared/utils/clineAuth";
@@ -842,6 +843,20 @@ export class DefaultExecutor extends BaseExecutor {
         }
       }
       withDefaults = record;
+    }
+
+    // Meta rejects Muse Code subscription requests whose flat function-tool
+    // names collide with its builtin catalog (403 client_attestation_denied).
+    // Codex exposes create_goal/get_goal/update_goal/request_user_input, among
+    // others, so alias only those declarations and restore the names in the
+    // response via the standard `_toolNameMap` seam.
+    if (
+      this.provider === "muse-code" &&
+      withDefaults &&
+      typeof withDefaults === "object" &&
+      !Array.isArray(withDefaults)
+    ) {
+      withDefaults = aliasMuseCodeBuiltinTools(withDefaults).body;
     }
 
     if (this.provider === "nvidia") {

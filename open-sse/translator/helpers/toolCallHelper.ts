@@ -127,30 +127,62 @@ export function caseInsensitiveToolNameLookup(
   return undefined;
 }
 
-/** Restore normalized function names in OpenAI Chat Completions responses. */
+/** Restore normalized function names in Chat Completions and Responses payloads. */
 export function restoreOpenAIToolNames(body: unknown, aliases: unknown): boolean {
   if (!(aliases instanceof Map) || aliases.size === 0) return false;
   const root = toRecord(body);
-  if (!root || !Array.isArray(root.choices)) return false;
+  if (!root) return false;
 
   let changed = false;
+  const restoreName = (record: JsonRecord | null): void => {
+    if (!record || typeof record.name !== "string") return;
+    const original = caseInsensitiveToolNameLookup(record.name, aliases);
+    if (typeof original !== "string" || original === record.name) return;
+    record.name = original;
+    changed = true;
+  };
   const restoreCalls = (calls: unknown): void => {
     if (!Array.isArray(calls)) return;
     for (const toolCall of calls) {
-      const fn = toRecord(toRecord(toolCall)?.function);
-      if (!fn || typeof fn.name !== "string") continue;
-      const original = caseInsensitiveToolNameLookup(fn.name, aliases);
-      if (typeof original !== "string" || original === fn.name) continue;
-      fn.name = original;
-      changed = true;
+      restoreName(toRecord(toRecord(toolCall)?.function));
+    }
+  };
+  const restoreResponseItem = (item: unknown): void => {
+    const record = toRecord(item);
+    if (!record) return;
+    if (record.type === "function_call" || record.type === "function") restoreName(record);
+    // A Chat Completions tool declaration can also be echoed in `response.tools`.
+    restoreName(toRecord(record.function));
+  };
+  const restoreResponsesPayload = (record: JsonRecord): void => {
+    restoreResponseItem(record.item);
+    if (Array.isArray(record.output)) for (const item of record.output) restoreResponseItem(item);
+    if (Array.isArray(record.tools)) for (const tool of record.tools) restoreResponseItem(tool);
+    const response = toRecord(record.response);
+    if (response) {
+      if (Array.isArray(response.output))
+        for (const item of response.output) restoreResponseItem(item);
+      if (Array.isArray(response.tools))
+        for (const tool of response.tools) restoreResponseItem(tool);
+    }
+    // `response.function_call_arguments.done` carries the function name at the top level.
+    if (
+      typeof record.type === "string" &&
+      record.type === "response.function_call_arguments.done"
+    ) {
+      restoreName(record);
     }
   };
 
-  for (const choice of root.choices) {
-    const record = toRecord(choice);
-    if (!record) continue;
-    restoreCalls(toRecord(record.delta)?.tool_calls);
-    restoreCalls(toRecord(record.message)?.tool_calls);
+  restoreResponsesPayload(root);
+
+  if (Array.isArray(root.choices)) {
+    for (const choice of root.choices) {
+      const record = toRecord(choice);
+      if (!record) continue;
+      restoreCalls(toRecord(record.delta)?.tool_calls);
+      restoreCalls(toRecord(record.message)?.tool_calls);
+    }
   }
 
   return changed;
