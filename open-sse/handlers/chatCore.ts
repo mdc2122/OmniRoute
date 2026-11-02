@@ -2795,13 +2795,21 @@ async function handleChatCoreInner({
   const extractedToolMetadata = extractRequestToolMetadata(translatedBody);
   const toolNameAliasMap = extractedToolMetadata.toolNameAliasMap;
   let requestToolIdentityMap = extractedToolMetadata.requestToolIdentityMap;
-  if (
-    sourceFormat === FORMATS.OPENAI_RESPONSES &&
-    (!requestToolIdentityMap || requestToolIdentityMap.size === 0)
-  ) {
-    requestToolIdentityMap = collectResponsesNamespaceToolIdentityMap(
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+    const declaredNamespaceIdentities = collectResponsesNamespaceToolIdentityMap(
       body as Record<string, unknown>
     );
+    if (declaredNamespaceIdentities) {
+      const mergedNamespaceIdentities = new Map(requestToolIdentityMap ?? []) as Map<
+        string,
+        { namespace: string; name: string }
+      > & { flatToolNames?: ReadonlySet<string> };
+      for (const [wireName, identity] of declaredNamespaceIdentities) {
+        mergedNamespaceIdentities.set(wireName, identity);
+      }
+      mergedNamespaceIdentities.flatToolNames = declaredNamespaceIdentities.flatToolNames;
+      requestToolIdentityMap = mergedNamespaceIdentities;
+    }
   }
 
   // Kiro: sanitize tool schemas before dispatch. Kiro returns 400 "Improperly

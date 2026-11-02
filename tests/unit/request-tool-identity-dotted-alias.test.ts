@@ -69,4 +69,28 @@ test("collects namespace identities from a native Responses tool declaration", (
     name: "spawn_agent",
   });
   assert.deepEqual(identityMap.get("clock__curr_time"), { namespace: "clock", name: "curr_time" });
+  assert.deepEqual(resolveRequestToolIdentity(identityMap, "curr_time"), {
+    namespace: "clock",
+    name: "curr_time",
+  });
+});
+
+test("declared flat tools block leaf-only namespace inference", () => {
+  const identityMap = collectResponsesNamespaceToolIdentityMap({
+    tools: [
+      { type: "function", name: "wait_agent" },
+      {
+        type: "namespace",
+        name: "collaboration",
+        tools: [{ type: "function", name: "wait_agent" }],
+      },
+    ],
+  });
+
+  assert.ok(identityMap instanceof Map);
+  assert.equal(resolveRequestToolIdentity(identityMap, "wait_agent"), null);
+  assert.deepEqual(resolveRequestToolIdentity(identityMap, "collaboration.wait_agent"), {
+    namespace: "collaboration",
+    name: "wait_agent",
+  });
 });

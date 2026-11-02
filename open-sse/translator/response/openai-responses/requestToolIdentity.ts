@@ -74,8 +74,15 @@ export function resolveRequestToolIdentity(identityMap: unknown, toolName: strin
       : identityMap && typeof identityMap === "object" && !Array.isArray(identityMap)
         ? Object.values(identityMap as Record<string, unknown>)
         : [];
+  const flatToolNames =
+    identityMap instanceof Map
+      ? (identityMap as Map<string, unknown> & { flatToolNames?: ReadonlySet<string> })
+          .flatToolNames
+      : undefined;
   let underscoreMatch: RequestToolIdentity | null = null;
   let underscoreMatchCount = 0;
+  let leafMatch: RequestToolIdentity | null = null;
+  let leafMatchCount = 0;
   for (const candidate of candidates) {
     const identity = asRequestToolIdentity(candidate);
     if (identity && `${identity.namespace}.${identity.name}` === toolName) return identity;
@@ -83,12 +90,21 @@ export function resolveRequestToolIdentity(identityMap: unknown, toolName: strin
       underscoreMatch = identity;
       underscoreMatchCount += 1;
     }
+    if (identity && identity.name === toolName) {
+      leafMatch = identity;
+      leafMatchCount += 1;
+    }
   }
 
   // Some model tool parsers flatten `namespace__leaf` as `namespace_leaf`
   // (instead of `namespace.leaf`). Accept that spelling only when it maps to a
   // single declared identity; an ambiguous underscore join must stay untouched.
-  if (underscoreMatchCount === 1) return underscoreMatch;
+  if (!flatToolNames?.has(toolName) && underscoreMatchCount === 1) return underscoreMatch;
+
+  // Muse sometimes drops the namespace entirely and emits only the declared
+  // leaf. Use that spelling only for a collector-created ledger, where the
+  // declared flat-tool set lets us reject a real top-level tool with that name.
+  if (flatToolNames && !flatToolNames.has(toolName) && leafMatchCount === 1) return leafMatch;
 
   // The wire-name split only stands in for a request that declared no
   // namespace identities at all (follow-up turns). When the ledger is populated

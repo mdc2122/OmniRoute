@@ -25,6 +25,13 @@ test("native Responses tool calls restore namespace identities without a request
             name: "collaboration.spawn_agent",
             arguments: '{"task_name":"child","message":"go"}',
           },
+          {
+            id: "fc_2",
+            type: "function_call",
+            call_id: "call_2",
+            name: "wait_agent",
+            arguments: '{"timeout_ms":10000}',
+          },
         ],
         usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
       }),
@@ -47,7 +54,10 @@ test("native Responses tool calls restore namespace identities without a request
         {
           type: "namespace",
           name: "collaboration",
-          tools: [{ type: "function", name: "spawn_agent", parameters: { type: "object" } }],
+          tools: [
+            { type: "function", name: "spawn_agent", parameters: { type: "object" } },
+            { type: "function", name: "wait_agent", parameters: { type: "object" } },
+          ],
         },
       ],
     };
@@ -77,10 +87,14 @@ test("native Responses tool calls restore namespace identities without a request
     const payload = (await result.response.json()) as JsonRecord;
     const output = payload.output as JsonRecord[];
     assert.deepEqual(
-      { namespace: output[0]?.namespace, name: output[0]?.name },
-      { namespace: "collaboration", name: "spawn_agent" }
+      output.map(({ namespace, name }) => ({ namespace, name })),
+      [
+        { namespace: "collaboration", name: "spawn_agent" },
+        { namespace: "collaboration", name: "wait_agent" },
+      ]
     );
     assert.deepEqual(output[0]?.encrypted_function_args, []);
+    assert.equal(output[1]?.encrypted_function_args, undefined);
     assert.ok(upstreamBodies.length >= 1);
   } finally {
     globalThis.fetch = originalFetch;

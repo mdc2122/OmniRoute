@@ -1,6 +1,9 @@
 import { flattenNamespaceToolName } from "../../translator/request/openai-responses/namespaceFlatten.ts";
 
 export type NamespaceIdentity = { namespace: string; name: string };
+export type NamespaceToolIdentityMap = Map<string, NamespaceIdentity> & {
+  flatToolNames?: ReadonlySet<string>;
+};
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -23,8 +26,9 @@ function toolName(value: unknown): string {
  */
 export function collectResponsesNamespaceToolIdentityMap(
   body: Record<string, unknown>
-): Map<string, NamespaceIdentity> | null {
-  const identityMap = new Map<string, NamespaceIdentity>();
+): NamespaceToolIdentityMap | null {
+  const identityMap = new Map<string, NamespaceIdentity>() as NamespaceToolIdentityMap;
+  const flatToolNames = new Set<string>();
   const inputItems = Array.isArray(body.input) ? body.input : [];
   const toolGroups = [Array.isArray(body.tools) ? body.tools : []];
   for (const item of inputItems) {
@@ -37,7 +41,13 @@ export function collectResponsesNamespaceToolIdentityMap(
   for (const tools of toolGroups) {
     for (const value of tools) {
       const tool = asRecord(value);
-      if (tool?.type !== "namespace" || !Array.isArray(tool.tools)) continue;
+      if (!tool) continue;
+      if (tool.type !== "namespace") {
+        const flatName = toolName(tool);
+        if (flatName) flatToolNames.add(flatName);
+        continue;
+      }
+      if (!Array.isArray(tool.tools)) continue;
       const namespace = toolName(tool);
       if (!namespace) continue;
       for (const childValue of tool.tools) {
@@ -48,6 +58,7 @@ export function collectResponsesNamespaceToolIdentityMap(
     }
   }
 
+  if (identityMap.size > 0) identityMap.flatToolNames = flatToolNames;
   return identityMap.size > 0 ? identityMap : null;
 }
 
