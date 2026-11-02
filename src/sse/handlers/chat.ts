@@ -1751,6 +1751,7 @@ async function handleSingleModelChat(
                 ...(runtimeOptions.allowRateLimitedConnection
                   ? { allowRateLimitedConnections: true }
                   : {}),
+                ...(museOwner ? { allowModelLockedConnections: true } : {}),
                 ...(forceLiveComboTest
                   ? {
                       allowSuppressedConnections: true,

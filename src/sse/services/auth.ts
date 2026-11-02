@@ -217,6 +217,8 @@ interface RecoverableConnectionState {
 export interface CredentialSelectionOptions {
   allowSuppressedConnections?: boolean;
   allowRateLimitedConnections?: boolean;
+  /** Pinned Muse sessions may retry their owner through a retryable model lockout. */
+  allowModelLockedConnections?: boolean;
   bypassQuotaPolicy?: boolean;
   forcedConnectionId?: string | null;
   excludeConnectionIds?: string[] | null;
@@ -1570,6 +1572,7 @@ export async function getProviderCredentials(
         }
         // Per-model lockout: if this specific model/family is locked on this connection, skip it
         if (
+          !options.allowModelLockedConnections &&
           requestedModel &&
           (isModelLocked(provider, c.id, requestedModel) ||
             isAlibabaModelFreeDrained(

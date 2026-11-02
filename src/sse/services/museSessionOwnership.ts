@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { getDbInstance } from "@/lib/db/core";
 import {
+  getModelLockoutInfo,
   isAccountUnavailable,
   isModelLocked,
 } from "@omniroute/open-sse/services/accountFallback.ts";
@@ -8,7 +9,7 @@ import {
 const NAMESPACE = "muse_session_ownership";
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 type Owner = { connectionId: string; generation?: string; account?: string };
-type Connection = { id: string; unavailable?: boolean };
+type Connection = { id: string; unavailable?: boolean; modelLocked?: boolean };
 
 export function usesMuseOAuthOwnership(
   connections: { id: string; authType?: string }[],
@@ -34,16 +35,24 @@ export function museClaimCandidates(
   return connections
     .filter((connection) => connection.authType === "oauth")
     .filter((connection) => !allowedIds || allowedIds.includes(connection.id))
-    .map((connection) => ({
-      id: connection.id,
-      unavailable:
-        !allowUnavailable &&
-        (isAccountUnavailable(connection.rateLimitedUntil) ||
-          ["banned", "expired", "credits_exhausted"].includes(
-            String(connection.testStatus || "").toLowerCase()
-          ) ||
-          isModelLocked("muse-code", connection.id, model)),
-    }));
+    .map((connection) => {
+      const modelLockout = model ? getModelLockoutInfo("muse-code", connection.id, model) : null;
+      const modelLocked =
+        !!modelLockout &&
+        modelLockout.remainingMs > 0 &&
+        !["not_found", "not_found_local"].includes(modelLockout.reason);
+      return {
+        id: connection.id,
+        modelLocked,
+        unavailable:
+          !allowUnavailable &&
+          (isAccountUnavailable(connection.rateLimitedUntil) ||
+            ["banned", "expired", "credits_exhausted"].includes(
+              String(connection.testStatus || "").toLowerCase()
+            ) ||
+            isModelLocked("muse-code", connection.id, model)),
+      };
+    });
 }
 
 // Muse intermittently answers HTTP 200 with no output. A failed result has emitted nothing to
@@ -168,7 +177,7 @@ export function claimMuseSession(
       (pinned || (current && !current.unavailable && (!forcedId || forcedId === current.id)))
     ) {
       owner = prior;
-      if (!current || current.unavailable) {
+      if (!current || (current.unavailable && !current.modelLocked)) {
         throw new MuseOwnershipError(
           "Muse session owner is unavailable; cross-account continuation is forbidden.",
           503
