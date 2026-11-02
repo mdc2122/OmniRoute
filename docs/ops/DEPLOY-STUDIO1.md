@@ -1,7 +1,7 @@
 ---
 title: "deploy/studio1 fork deploy branch"
 version: 3.8.52
-lastUpdated: 2026-10-20
+lastUpdated: 2026-11-01
 ---
 
 # `deploy/studio1`: fork-only deploy branch
@@ -22,6 +22,10 @@ runbook, not here.
 | `deploy-build: register Muse Wonder ids with the Responses format`         | Stock upstream v3.8.52 sends unlisted `muse-wonder-*` ids a chat-completions body on `/responses` (HTTP 400). Keep until upstream registers Wonder               |
 | `fix(muse): alias Codex builtin tool collisions for subscriptions`         | Codex tool names collide with Muse builtins (`403 client_attestation_denied`); alias on request and restore names on response                                    |
 | `fix(muse): normalize empty no-argument tool arguments`                    | Codex histories replay no-arg calls as `arguments: ""`; Meta rejects them unless normalized to valid JSON (`{}`)                                                 |
+| `fix(muse): restore namespaced calls in non-streaming responses`           | Muse can return flattened collaboration calls on the non-streaming Responses path; restore the declared `{namespace, name}` pair                                 |
+| `fix(muse): derive namespace identities on native responses`               | Same-format `/v1/responses` requests skip the request pivot, so derive the identity ledger directly from declared namespace tools                                |
+| `fix(muse): restore unambiguous leaf-only tool calls`                      | Muse may emit only `wait_agent`; restore its namespace when unique while blocking ambiguous and genuine flat-tool collisions                                     |
+| `fix(muse): normalize empty outbound tool arguments`                       | A current no-argument Muse tool call may also arrive as `arguments: ""`; emit `{}` so Codex can parse and dispatch it                                            |
 
 ## Rules
 
