@@ -30,7 +30,7 @@ test("native Responses tool calls restore namespace identities without a request
             type: "function_call",
             call_id: "call_2",
             name: "wait_agent",
-            arguments: '{"timeout_ms":10000}',
+            arguments: "",
           },
         ],
         usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
@@ -95,6 +95,7 @@ test("native Responses tool calls restore namespace identities without a request
     );
     assert.deepEqual(output[0]?.encrypted_function_args, []);
     assert.equal(output[1]?.encrypted_function_args, undefined);
+    assert.equal(output[1]?.arguments, "{}");
     assert.ok(upstreamBodies.length >= 1);
   } finally {
     globalThis.fetch = originalFetch;

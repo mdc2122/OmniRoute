@@ -182,6 +182,9 @@ export function translateNonStreamingClientResponse(
           item.namespace = identity.namespace;
           item.name = identity.name;
         }
+        if (typeof item.arguments !== "string" || !item.arguments.trim()) {
+          item.arguments = "{}";
+        }
         Object.assign(item, plaintextCollaborationFields(item.namespace, item.name));
       }
     }
