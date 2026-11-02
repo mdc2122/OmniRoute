@@ -1,4 +1,55 @@
+import { flattenNamespaceToolName } from "../../translator/request/openai-responses/namespaceFlatten.ts";
+
 export type NamespaceIdentity = { namespace: string; name: string };
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function toolName(value: unknown): string {
+  const record = asRecord(value);
+  if (!record) return "";
+  if (typeof record.name === "string" && record.name.trim()) return record.name.trim();
+  const functionRecord = asRecord(record.function);
+  return typeof functionRecord?.name === "string" ? functionRecord.name.trim() : "";
+}
+
+/**
+ * Build the namespace identity ledger directly from a native Responses body.
+ * The same-format Responses -> Responses path skips the request translator, so
+ * it never publishes `_namespaceToolIdentityMap` for the response seam.
+ */
+export function collectResponsesNamespaceToolIdentityMap(
+  body: Record<string, unknown>
+): Map<string, NamespaceIdentity> | null {
+  const identityMap = new Map<string, NamespaceIdentity>();
+  const inputItems = Array.isArray(body.input) ? body.input : [];
+  const toolGroups = [Array.isArray(body.tools) ? body.tools : []];
+  for (const item of inputItems) {
+    const record = asRecord(item);
+    if (record?.type === "additional_tools" && Array.isArray(record.tools)) {
+      toolGroups.push(record.tools);
+    }
+  }
+
+  for (const tools of toolGroups) {
+    for (const value of tools) {
+      const tool = asRecord(value);
+      if (tool?.type !== "namespace" || !Array.isArray(tool.tools)) continue;
+      const namespace = toolName(tool);
+      if (!namespace) continue;
+      for (const childValue of tool.tools) {
+        const leaf = toolName(childValue);
+        if (!leaf) continue;
+        identityMap.set(flattenNamespaceToolName(namespace, leaf), { namespace, name: leaf });
+      }
+    }
+  }
+
+  return identityMap.size > 0 ? identityMap : null;
+}
 
 /**
  * Capture both ledgers before the legacy extractor deletes their side channels.

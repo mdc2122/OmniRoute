@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { resolveRequestToolIdentity } from "../../open-sse/translator/response/openai-responses/requestToolIdentity.ts";
+import { collectResponsesNamespaceToolIdentityMap } from "../../open-sse/handlers/chatCore/requestToolIdentity.ts";
 
 test("restores a dotted namespace alias from the request identity ledger", () => {
   const identity = { namespace: "exec", name: "exec_command" };
@@ -37,4 +38,35 @@ test("does not guess when an underscore-flattened name is ambiguous", () => {
   ]);
 
   assert.equal(resolveRequestToolIdentity(identityMap, "a_b_c"), null);
+});
+
+test("collects namespace identities from a native Responses tool declaration", () => {
+  const identityMap = collectResponsesNamespaceToolIdentityMap({
+    tools: [
+      {
+        type: "namespace",
+        name: "collaboration",
+        tools: [{ type: "function", name: "spawn_agent" }],
+      },
+    ],
+    input: [
+      {
+        type: "additional_tools",
+        tools: [
+          {
+            type: "namespace",
+            name: "clock",
+            tools: [{ type: "function", name: "curr_time" }],
+          },
+        ],
+      },
+    ],
+  });
+
+  assert.ok(identityMap instanceof Map);
+  assert.deepEqual(identityMap.get("collaboration__spawn_agent"), {
+    namespace: "collaboration",
+    name: "spawn_agent",
+  });
+  assert.deepEqual(identityMap.get("clock__curr_time"), { namespace: "clock", name: "curr_time" });
 });

@@ -1,4 +1,5 @@
 import {
+  collectResponsesNamespaceToolIdentityMap,
   extractRequestToolMetadata,
   resolveResponseToolNameMap,
 } from "./chatCore/requestToolIdentity.ts";
@@ -2791,7 +2792,17 @@ async function handleChatCoreInner({
   // while namespace identities carry `{namespace, name}` for the #7936 response
   // seam. Capture both before stripping their side channels: a Responses ->
   // Gemini/Antigravity pivot carries both maps, not one recoverable ledger.
-  const { requestToolIdentityMap, toolNameAliasMap } = extractRequestToolMetadata(translatedBody);
+  const extractedToolMetadata = extractRequestToolMetadata(translatedBody);
+  const toolNameAliasMap = extractedToolMetadata.toolNameAliasMap;
+  let requestToolIdentityMap = extractedToolMetadata.requestToolIdentityMap;
+  if (
+    sourceFormat === FORMATS.OPENAI_RESPONSES &&
+    (!requestToolIdentityMap || requestToolIdentityMap.size === 0)
+  ) {
+    requestToolIdentityMap = collectResponsesNamespaceToolIdentityMap(
+      body as Record<string, unknown>
+    );
+  }
 
   // Kiro: sanitize tool schemas before dispatch. Kiro returns 400 "Improperly
   // formed request" for unsupported JSON-Schema keywords (anyOf/$ref/if-then,
