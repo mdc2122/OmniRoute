@@ -10,6 +10,35 @@ import { collectResponsesCustomToolNames } from "../translator/request/openai-re
 import { createResponsesApiTransformStream } from "../transformer/responsesTransformer.ts";
 import { createSseHeartbeatTransform, HEARTBEAT_SHAPES } from "../utils/sseHeartbeat.ts";
 import { SSE_HEARTBEAT_INTERVAL_MS } from "../config/constants.ts";
+import { restoreResponsesFunctionCallIdentities } from "../translator/response/openai-responses/functionCallIdentity.ts";
+
+async function restoreJsonResponseFunctionCallIdentities(
+  response: Response,
+  requestToolIdentityMap: Map<string, unknown> | null
+): Promise<Response> {
+  if (!(requestToolIdentityMap instanceof Map) || requestToolIdentityMap.size === 0)
+    return response;
+  if (response.status !== 200) return response;
+
+  const contentType = response.headers.get("Content-Type") || "";
+  if (!contentType.toLowerCase().includes("application/json")) return response;
+
+  let payload: unknown;
+  try {
+    payload = await response.clone().json();
+  } catch {
+    return response;
+  }
+  if (!restoreResponsesFunctionCallIdentities(payload, requestToolIdentityMap)) return response;
+
+  const headers = new Headers(response.headers);
+  headers.delete("Content-Length");
+  return new Response(JSON.stringify(payload), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
 /**
  * Handle /v1/responses request
@@ -88,9 +117,15 @@ export async function handleResponsesCore({
   const response = result.response;
   const contentType = response.headers.get("Content-Type") || "";
 
-  // If not SSE or error, return as-is
+  // Non-streaming Responses calls return JSON before the SSE transforms below
+  // run. Apply the same namespace identity closure so Codex receives the
+  // declared {namespace, name} pair instead of a flattened model spelling.
   if (!contentType.includes("text/event-stream") || response.status !== 200) {
-    return result;
+    const restoredResponse = await restoreJsonResponseFunctionCallIdentities(
+      response,
+      requestToolIdentityMap
+    );
+    return restoredResponse === response ? result : { ...result, response: restoredResponse };
   }
 
   // Transform SSE stream to Responses API format (no logging in worker)

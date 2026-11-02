@@ -21,3 +21,20 @@ test("prefers an exact map entry over dotted-alias fallback", () => {
 
   assert.deepEqual(resolveRequestToolIdentity(identityMap, "exec.exec_command"), exact);
 });
+
+test("restores a single underscore-flattened namespace alias", () => {
+  const identity = { namespace: "collaboration", name: "list_agents" };
+  const identityMap = new Map([["collaboration__list_agents", identity]]);
+
+  assert.deepEqual(resolveRequestToolIdentity(identityMap, "collaboration_list_agents"), identity);
+  assert.equal(resolveRequestToolIdentity(identityMap, "unrelated_list_agents"), null);
+});
+
+test("does not guess when an underscore-flattened name is ambiguous", () => {
+  const identityMap = new Map([
+    ["a__b_c", { namespace: "a", name: "b_c" }],
+    ["a_b__c", { namespace: "a_b", name: "c" }],
+  ]);
+
+  assert.equal(resolveRequestToolIdentity(identityMap, "a_b_c"), null);
+});

@@ -74,10 +74,21 @@ export function resolveRequestToolIdentity(identityMap: unknown, toolName: strin
       : identityMap && typeof identityMap === "object" && !Array.isArray(identityMap)
         ? Object.values(identityMap as Record<string, unknown>)
         : [];
+  let underscoreMatch: RequestToolIdentity | null = null;
+  let underscoreMatchCount = 0;
   for (const candidate of candidates) {
     const identity = asRequestToolIdentity(candidate);
     if (identity && `${identity.namespace}.${identity.name}` === toolName) return identity;
+    if (identity && `${identity.namespace}_${identity.name}` === toolName) {
+      underscoreMatch = identity;
+      underscoreMatchCount += 1;
+    }
   }
+
+  // Some model tool parsers flatten `namespace__leaf` as `namespace_leaf`
+  // (instead of `namespace.leaf`). Accept that spelling only when it maps to a
+  // single declared identity; an ambiguous underscore join must stay untouched.
+  if (underscoreMatchCount === 1) return underscoreMatch;
 
   // The wire-name split only stands in for a request that declared no
   // namespace identities at all (follow-up turns). When the ledger is populated

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { aliasMuseCodeBuiltinTools } from "../../open-sse/executors/museCodeToolNames.ts";
+import { restoreResponsesFunctionCallIdentities } from "../../open-sse/translator/response/openai-responses/functionCallIdentity.ts";
 import { restoreOpenAIToolNames } from "../../open-sse/translator/helpers/toolCallHelper.ts";
 import { processBufferedPassthroughLine } from "../../open-sse/utils/passthroughTailProcessor.ts";
 
@@ -120,6 +121,53 @@ test("muse-code leaves non-empty JSON function arguments byte-for-byte intact", 
   const adapted = aliasMuseCodeBuiltinTools(body);
   assert.equal(adapted.body, body);
   assert.equal((body.input[0] as JsonRecord).arguments, argumentsValue);
+});
+
+test("muse-code restores flattened collaboration names on non-streaming Responses output", () => {
+  const requestToolIdentityMap = new Map([
+    ["collaboration__spawn_agent", { namespace: "collaboration", name: "spawn_agent" }],
+    ["collaboration__list_agents", { namespace: "collaboration", name: "list_agents" }],
+    ["exec__exec_command", { namespace: "exec", name: "exec_command" }],
+  ]);
+  const payload = {
+    output: [
+      {
+        type: "function_call",
+        name: "collaboration.spawn_agent",
+        arguments: '{"task_name":"worker","message":"go"}',
+      },
+      {
+        type: "function_call",
+        name: "collaboration_list_agents",
+        arguments: "{}",
+      },
+      {
+        type: "function_call",
+        name: "exec__exec_command",
+        arguments: "{}",
+      },
+      {
+        type: "function_call",
+        name: "unrelated_tool",
+        arguments: "{}",
+      },
+    ],
+  };
+
+  assert.equal(restoreResponsesFunctionCallIdentities(payload, requestToolIdentityMap), true);
+  assert.deepEqual(
+    payload.output.map((item) => ({
+      namespace: (item as JsonRecord).namespace,
+      name: item.name,
+      plaintext: (item as JsonRecord).encrypted_function_args,
+    })),
+    [
+      { namespace: "collaboration", name: "spawn_agent", plaintext: [] },
+      { namespace: "collaboration", name: "list_agents", plaintext: undefined },
+      { namespace: "exec", name: "exec_command", plaintext: undefined },
+      { namespace: undefined, name: "unrelated_tool", plaintext: undefined },
+    ]
+  );
 });
 
 test("muse-code tool aliasing avoids collisions with caller-owned aliases", () => {
