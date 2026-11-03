@@ -32,6 +32,14 @@ test("muse-code models include muse-spark subscription ids", () => {
   assert.ok(ids.includes("muse-spark-1.3-contributor"), "must include muse-spark-1.3-contributor");
 });
 
+test("muse-code Wonder ids resolve to the Responses format, with and without the provider prefix", async () => {
+  const { getModelTargetFormat } = await import("../../open-sse/config/providerModels.ts");
+  for (const id of ["muse-wonder-full-1.0", "muse-wonder-1.0"]) {
+    assert.equal(getModelTargetFormat("muse-code", id), "openai-responses", id);
+    assert.equal(getModelTargetFormat("muse-code", `muse-code/${id}`), "openai-responses", id);
+  }
+});
+
 test("muse-code models include llama-4-scout", () => {
   const ids = muse_codeProvider.models.map((m) => m.id);
   assert.ok(ids.includes("llama-4-scout"), "must include llama-4-scout");
