@@ -7,7 +7,10 @@ import { FORMATS } from "../formats.ts";
 import { appendToolCallArgumentDelta } from "../../utils/toolCallArguments.ts";
 import { translatorToolCallLifecycle } from "./openai-responses/toolCallLifecycle.ts";
 import { projectCompletedStreamError } from "../../utils/streamErrorFormat.ts";
-import { fallbackToolCallId } from "../helpers/toolCallHelper.ts";
+import {
+  caseInsensitiveToolNameLookup,
+  fallbackToolCallId,
+} from "../helpers/toolCallHelper.ts";
 import { finalizeResponsesTerminalStatus } from "../helpers/responsesTerminalStatus.ts";
 import { shouldParseTextualReasoningTags } from "../../handlers/responseSanitizer.ts";
 import { getReadableReasoningValue } from "../../utils/reasoningFields.ts";
@@ -54,6 +57,13 @@ import {
 } from "./openai-responses/synthesizeTextSnapshots.ts";
 // normalizeUpstreamFailure is re-exported for external importers (tests).
 export { normalizeUpstreamFailure } from "./openai-responses/pureHelpers.ts";
+
+/** Restore a provider-side tool alias (e.g. Muse `client_shell`) to the client name. */
+function resolveToolCallName(state, value: unknown): string {
+  const rawName = normalizeToolName(value);
+  if (!rawName) return rawName;
+  return caseInsensitiveToolNameLookup(rawName, state?.toolNameMap) ?? rawName;
+}
 
 /** Carries escapeJsonStringValues's scan state (whether we're inside a JSON
  * string, and whether the fragment ended mid-escape-sequence) across calls
@@ -1132,7 +1142,7 @@ function openaiResponsesToOpenAIResponseStream(chunk, state) {
     // Kept for computeFinishReason (synthesizeCompletedToolCalls.ts) compatibility.
     state.currentToolCallId = callId;
 
-    const toolName = normalizeToolName(item.name);
+    const toolName = resolveToolCallName(state, item.name);
     // Assign this call's index NOW, at .added, not at .done — two calls opened before
     // either closes (a genuine parallel dispatch) must never share an index. Deferred
     // (still-nameless) calls are the one exception: they don't claim an index until
@@ -1258,7 +1268,8 @@ function openaiResponsesToOpenAIResponseStream(chunk, state) {
     const entry = trackedEntry || { index: null, argsBuffer: "", deferred: false };
 
     const buffered = entry.argsBuffer || "";
-    const toolName = normalizeToolName(item.name);
+    const rawToolName = normalizeToolName(item.name);
+    const toolName = resolveToolCallName(state, item.name);
 
     // Claim (and advance) this call's index now if it wasn't assigned at .added — either
     // a deferred call whose name has just now resolved, or a Codex-style done-only
@@ -1269,7 +1280,7 @@ function openaiResponsesToOpenAIResponseStream(chunk, state) {
       state.toolCallIndex = entry.index + 1;
     }
     const currentIndex = entry.index;
-    const toolSchema = state.toolSchemas?.get(toolName);
+    const toolSchema = state.toolSchemas?.get(toolName) ?? state.toolSchemas?.get(rawToolName);
     const shouldNormalizeArguments = toolName === "Agent";
 
     if (toolName && state.toolCalls instanceof Map) {

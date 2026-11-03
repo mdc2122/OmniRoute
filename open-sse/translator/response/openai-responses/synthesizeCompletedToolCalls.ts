@@ -5,7 +5,10 @@
 // Without this, state.toolCallIndex stays 0 and state.currentToolCallId stays
 // null, so computeFinishReason returns "stop" instead of "tool_calls",
 // breaking the agent loop for downstream Chat Completions clients.
-import { fallbackToolCallId } from "../../helpers/toolCallHelper.ts";
+import {
+  caseInsensitiveToolNameLookup,
+  fallbackToolCallId,
+} from "../../helpers/toolCallHelper.ts";
 import { normalizeToolName, stripEmptyOptionalToolArgs } from "./pureHelpers.ts";
 
 type FinishReason = "tool_calls" | "stop" | "length" | "content_filter";
@@ -16,6 +19,7 @@ interface CompletionState {
   chatId?: string;
   created?: number;
   model?: string;
+  toolNameMap?: Map<string, string> | null;
   toolCallIndex?: number;
   currentToolCallId?: unknown;
   incompleteReason?: unknown;
@@ -128,8 +132,9 @@ function buildToolCallChunks(
 ): Record<string, unknown>[] {
   const chunks: Record<string, unknown>[] = [];
   const callId = fcItem.call_id || fallbackToolCallId(state.toolCallIndex);
-  const toolName = normalizeToolName(fcItem.name);
-  const toolSchema = state.toolSchemas?.get(toolName);
+  const rawToolName = normalizeToolName(fcItem.name);
+  const toolName = caseInsensitiveToolNameLookup(rawToolName, state.toolNameMap) ?? rawToolName;
+  const toolSchema = state.toolSchemas?.get(toolName) ?? state.toolSchemas?.get(rawToolName);
 
   // Set state as output_item.added would
   state.currentToolCallId = callId;

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { MuseCodeExecutor } from "../../open-sse/executors/muse-code.ts";
 import { aliasMuseCodeBuiltinTools } from "../../open-sse/executors/museCodeToolNames.ts";
 import { mergeResponseToolNameMap } from "../../open-sse/handlers/chatCore/passthroughToolNames.ts";
+import { openaiResponsesToOpenAIResponse } from "../../open-sse/translator/response/openai-responses.ts";
 import { restoreOpenAIToolNames } from "../../open-sse/translator/helpers/toolCallHelper.ts";
 import { processBufferedPassthroughLine } from "../../open-sse/utils/passthroughTailProcessor.ts";
 
@@ -340,4 +341,94 @@ test("muse executor aliases shell and the streaming merge restores chat deltas",
   };
   assert.equal(restoreOpenAIToolNames(chunk, responseToolNameMap), true);
   assert.equal(chunk.choices[0].delta.tool_calls[0].function.name, "shell");
+});
+
+test("Responses -> Chat streaming translator restores aliased tool names", () => {
+  const state: JsonRecord = {
+    toolNameMap: new Map([["client_shell", "shell"]]),
+  };
+  const added = openaiResponsesToOpenAIResponse(
+    {
+      type: "response.output_item.added",
+      output_index: 0,
+      item: {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_1",
+        name: "client_shell",
+        arguments: "",
+      },
+    },
+    state
+  ) as JsonRecord;
+  const addedCall = (added.choices as JsonRecord[])[0] as JsonRecord;
+  const addedDelta = addedCall.delta as JsonRecord;
+  assert.equal(
+    ((addedDelta.tool_calls as JsonRecord[])[0].function as JsonRecord).name,
+    "shell"
+  );
+
+  openaiResponsesToOpenAIResponse(
+    {
+      type: "response.function_call_arguments.delta",
+      item_id: "fc_1",
+      output_index: 0,
+      delta: '{"command":"echo ok"}',
+    },
+    state
+  );
+  const done = openaiResponsesToOpenAIResponse(
+    {
+      type: "response.output_item.done",
+      output_index: 0,
+      item: {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "call_1",
+        name: "client_shell",
+        arguments: '{"command":"echo ok"}',
+      },
+    },
+    state
+  ) as JsonRecord;
+  const doneCall = (done.choices as JsonRecord[])[0] as JsonRecord;
+  const doneDelta = doneCall.delta as JsonRecord;
+  assert.equal(
+    ((doneDelta.tool_calls as JsonRecord[])[0].function as JsonRecord).arguments,
+    '{"command":"echo ok"}'
+  );
+});
+
+test("Responses -> Chat completed synthesis restores aliased tool names", () => {
+  const state: JsonRecord = {
+    toolNameMap: new Map([["client_shell", "shell"]]),
+  };
+  const result = openaiResponsesToOpenAIResponse(
+    {
+      type: "response.completed",
+      response: {
+        id: "resp_1",
+        status: "completed",
+        model: "muse-wonder-full-1.0",
+        output: [
+          {
+            type: "function_call",
+            call_id: "call_1",
+            name: "client_shell",
+            arguments: '{"command":"echo ok"}',
+          },
+        ],
+        usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 },
+      },
+    },
+    state
+  ) as JsonRecord[];
+  assert.ok(Array.isArray(result));
+  const headerCall = (result[0].choices as JsonRecord[])[0] as JsonRecord;
+  const headerDelta = headerCall.delta as JsonRecord;
+  assert.equal(
+    ((headerDelta.tool_calls as JsonRecord[])[0].function as JsonRecord).name,
+    "shell"
+  );
+  assert.ok(!JSON.stringify(result).includes("client_shell"));
 });
