@@ -8,6 +8,8 @@ export interface CredentialSelectionOptions {
   requireToolCalling?: boolean;
   allowSuppressedConnections?: boolean;
   allowRateLimitedConnections?: boolean;
+  /** Pinned Muse sessions may retry their owner through a retryable model lockout. */
+  allowModelLockedConnections?: boolean;
   bypassQuotaPolicy?: boolean;
   forcedConnectionId?: string | null;
   /** API-key-scoped ordered preference. Only ranks connections that survived eligibility gates. */

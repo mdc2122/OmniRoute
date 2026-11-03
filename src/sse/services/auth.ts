@@ -1277,6 +1277,7 @@ export async function getProviderCredentials(
         }
         // Per-model lockout: if this specific model/family is locked on this connection, skip it
         if (
+          !options.allowModelLockedConnections &&
           requestedModel &&
           (isModelLocked(provider, c.id, requestedModel) ||
             isAlibabaModelFreeDrained(

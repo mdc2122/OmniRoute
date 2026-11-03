@@ -230,6 +230,48 @@ test("a Muse 429 model lockout makes new and unserved sessions claim the healthy
   clearAllModelLockouts();
 });
 
+test("a pinned Muse session may retry its owner through a retryable model lockout", async () => {
+  getDbInstance()
+    .prepare("DELETE FROM key_value WHERE namespace = ?")
+    .run("muse_session_ownership");
+  clearAllModelLockouts();
+  const connections = [
+    { id: "account-a", authType: "oauth", rateLimitedUntil: null, testStatus: "active" },
+    { id: "account-b", authType: "oauth", rateLimitedUntil: null, testStatus: "active" },
+  ];
+  const model = "muse-wonder-full-1.0";
+  const scope = museSessionScope({ session_id: "pinned-lockout" }, undefined, "client");
+  const owner = claimMuseSession(
+    scope,
+    { input: "fresh" },
+    museClaimCandidates(connections, model)
+  );
+  const generation = bindMuseGeneration(scope, owner.connectionId, "pinned-key", "pinned-id");
+  await recordMuseOutput(
+    new Response(JSON.stringify({ output: [{ type: "message", id: "pinned-message" }] })),
+    scope,
+    generation
+  ).text();
+
+  lockModel("muse-code", owner.connectionId, model, "server_error", 60_000);
+  const locked = museClaimCandidates(connections, model);
+  assert.equal(locked[0]?.modelLocked, true);
+  assert.equal(
+    claimMuseSession(scope, { input: "continue" }, locked).connectionId,
+    owner.connectionId
+  );
+
+  clearAllModelLockouts();
+  lockModel("muse-code", owner.connectionId, model, "not_found", 60_000);
+  const notFound = museClaimCandidates(connections, model);
+  assert.equal(notFound[0]?.modelLocked, false);
+  assert.throws(
+    () => claimMuseSession(scope, { input: "continue" }, notFound),
+    /cross-account continuation is forbidden/
+  );
+  clearAllModelLockouts();
+});
+
 test("API-key Muse connections bypass OAuth ownership unless OAuth is selected", () => {
   const keys = [{ id: "key", authType: "apikey" }];
   assert.equal(usesMuseOAuthOwnership(keys), false);
